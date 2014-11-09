@@ -1,6 +1,6 @@
 use std::sync::RWLock;
 use std::collections::HashMap;
-use std::collections::hashmap::{Occupied, Vacant};
+use std::collections::hash_map::{Occupied, Vacant};
 use std::io::{IoResult, File};
 use std::io::util::copy;
 use std::path::BytesContainer;
@@ -8,7 +8,7 @@ use serialize::Encodable;
 use http;
 use http::server::ResponseWriter;
 use time;
-use mimes::get_media_type;
+use mimes;
 use mustache;
 use mustache::{Template, Encoder, Error};
 
@@ -37,12 +37,13 @@ impl<'a, 'b> Response<'a, 'b> {
     /// # Example
     /// ```{rust}
     /// # use nickel::{Request, Response};
+    /// use nickel::mimes;
     /// fn handler(request: &Request, response: &mut Response) {
-    ///     response.content_type("html");
+    ///     response.content_type(mimes::Html);
     /// }
     /// ```
-    pub fn content_type(&mut self, text: &str) -> &mut Response<'a,'b> {
-        self.origin.headers.content_type = get_media_type(text);
+    pub fn content_type(&mut self, mt: mimes::MediaType) -> &mut Response<'a,'b> {
+        self.origin.headers.content_type = Some(mimes::get_media_type(mt));
         self
     }
 
@@ -104,7 +105,9 @@ impl<'a, 'b> Response<'a, 'b> {
         let mut file = try!(File::open(path));
         self.origin.headers.content_length = None;
 
-        self.origin.headers.content_type = path.extension_str().and_then(get_media_type);
+        self.origin.headers.content_type = path.extension_str()
+                                               .and_then(from_str)
+                                               .map(mimes::get_media_type);
         self.origin.headers.server = Some(String::from_str("Nickel"));
         copy(&mut file, self.origin)
     }
@@ -114,7 +117,7 @@ impl<'a, 'b> Response<'a, 'b> {
     /// # Example
     /// ```{rust}
     /// # use nickel::{Request, Response};
-    /// # use std::collections::hashmap::HashMap;
+    /// # use std::collections::HashMap;
     /// fn handler(request: &Request, response: &mut Response) {
     ///     let mut data = HashMap::new();
     ///     data.insert("name", "user");
@@ -156,7 +159,10 @@ impl<'a, 'b> Response<'a, 'b> {
 #[test]
 fn matches_content_type () {
     let path = &Path::new("test.txt");
-    let content_type = path.extension_str().and_then(get_media_type).unwrap();
+    let content_type = path.extension_str().and_then(from_str);
+
+    assert_eq!(content_type, Some(mimes::Txt));
+    let content_type = content_type.map(mimes::get_media_type).unwrap();
 
     assert_eq!(content_type.type_.as_slice(), "text");
     assert_eq!(content_type.subtype.as_slice(), "plain");
